@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Book } from 'lucide-react';
+import { Book, BookOpen } from 'lucide-react';
 
 interface Surah {
   number: number;
@@ -8,11 +8,27 @@ interface Surah {
   englishName: string;
 }
 
+interface AyahData {
+  number: number;
+  text: string;
+  numberInSurah: number;
+}
+
+interface TafsirResponse {
+  data: {
+    ayahs: AyahData[];
+    edition: {
+      name: string;
+      englishName: string;
+    };
+  }[];
+}
+
 const Tafsir = () => {
   const { t, i18n } = useTranslation();
   const [surahs, setSurahs] = useState<Surah[]>([]);
   const [selectedSurah, setSelectedSurah] = useState<Surah | null>(null);
-  const [tafsirText, setTafsirText] = useState<string>('');
+  const [ayahs, setAyahs] = useState<{ quran: AyahData; tafsir: AyahData }[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -21,15 +37,36 @@ const Tafsir = () => {
       .then(data => setSurahs(data.data));
   }, []);
 
-  const fetchTafsir = (surah: Surah) => {
+  const fetchTafsir = async (surah: Surah) => {
     setLoading(true);
-    // Using a mock text for demo as real Tafsir API requires complex integration
-    setTimeout(() => {
-        setTafsirText(i18n.language === 'ar' 
-            ? `تفسير سورة ${surah.name} \n\n(التفسير الميسر)\n\nهذا نموذج لتفسير السورة. يمكنك إضافة محتوى التفسير هنا أو ربطه بواجهة برمجة تطبيقات خارجية.\n\nبسم الله الرحمن الرحيم...`
-            : `Tafsir of ${surah.englishName} \n\n(Al-Jalalayn)\n\nThis is a placeholder for the Tafsir text. In a production app, you would fetch this from a Tafsir API.\n\nIn the name of Allah...`);
+    setAyahs([]);
+    
+    // Fetch Quran text (Simple or Uthmani) and Tafsir (Al-Muyassar for Arabic, Saheeh for English as fallback)
+    // Note: 'ar.muyassar' is the standard easy tafsir.
+    // For English, we'll use 'en.sahih' (translation) as a placeholder for explanation if strictly 'tafsir' isn't available in simple format
+    const tafsirEdition = i18n.language === 'ar' ? 'ar.muyassar' : 'en.sahih';
+    const quranEdition = 'quran-uthmani';
+
+    try {
+        const response = await fetch(`https://api.alquran.cloud/v1/surah/${surah.number}/editions/${quranEdition},${tafsirEdition}`);
+        const data: TafsirResponse = await response.json();
+        
+        if (data.data && data.data.length >= 2) {
+            const quranData = data.data[0].ayahs;
+            const tafsirData = data.data[1].ayahs;
+            
+            const combined = quranData.map((ayah, index) => ({
+                quran: ayah,
+                tafsir: tafsirData[index]
+            }));
+            
+            setAyahs(combined);
+        }
+    } catch (error) {
+        console.error("Failed to fetch tafsir", error);
+    } finally {
         setLoading(false);
-    }, 800);
+    }
   };
 
   useEffect(() => {
@@ -74,11 +111,31 @@ const Tafsir = () => {
                 {loading ? (
                     <div className="text-center py-20 flex flex-col items-center">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mb-4"></div>
-                        <span className="text-gray-500">Thinking...</span>
+                        <span className="text-gray-500">جاري تحميل التفسير...</span>
                     </div>
                 ) : (
-                    <div className="prose max-w-none font-amiri text-xl leading-loose text-gray-700 whitespace-pre-line bg-primary-50 p-6 rounded-lg border border-primary-100">
-                        {tafsirText}
+                    <div className="space-y-8">
+                        {ayahs.map((item, index) => (
+                            <div key={index} className="bg-primary-50 p-6 rounded-xl border border-primary-100">
+                                <div className="mb-4 text-center border-b border-primary-200 pb-4">
+                                    <p className="font-amiri text-2xl leading-loose text-primary-900 mb-2">
+                                        {item.quran.text} 
+                                        <span className="inline-flex items-center justify-center w-8 h-8 mr-2 text-sm border border-primary-600 rounded-full text-primary-600 number-font">
+                                            {item.quran.numberInSurah}
+                                        </span>
+                                    </p>
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-primary-700 mb-2 flex items-center gap-2">
+                                        <BookOpen size={16} />
+                                        {i18n.language === 'ar' ? 'التفسير:' : 'Explanation:'}
+                                    </h4>
+                                    <p className="font-amiri text-lg leading-loose text-gray-700">
+                                        {item.tafsir.text}
+                                    </p>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>
